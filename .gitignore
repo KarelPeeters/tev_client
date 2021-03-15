@@ -1,0 +1,6 @@
+/.idea/
+
+/target/
+
+# This is a library, so don't check this file in
+Cargo.lock

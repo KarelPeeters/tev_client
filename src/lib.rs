@@ -1,9 +1,44 @@
+//! This Rust crate implements a IPC TCP client for [tev](https://github.com/Tom94/tev).
+//! It enables programmatic control of the images displayed by `tev` using a convenient and safe Rust api.
+//!
+//! Supports all existing `tev` commands:
+//! * [PacketOpenImage] open an existing image given the path
+//! * [PacketReloadImage] reload an image from disk
+//! * [PacketCloseImage] close an opened image
+//! * [PacketCreateImage] create a new black image with given size and channels
+//! * [PacketUpdateImage] update part of the pixels of an opened image
+//!
+//! ## Example code:
+//!
+//! ```rust
+//! use std::process::Command;
+//! use tev_client::{PacketCreateImage, TevClient};
+//!
+//! fn main() -> std::io::Result<()> {
+//!     //spawn a tev instance, this command assumes tev is in PATH
+//!     let mut client = TevClient::spawn_path_default()?;
+//!
+//!     //send a command to tev
+//!     client.send(PacketCreateImage {
+//!         image_name: "test",
+//!         grab_focus: false,
+//!         width: 1920,
+//!         height: 1080,
+//!         channel_names: &["R", "G", "B"],
+//!     })?;
+//!
+//!     Ok(())
+//! }
+//! ```
+
 use std::io;
-pub use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::process::{Command, Stdio};
 
-/// A connection to a Tev instance. Constructed using [TevClient::new]. Use [TevClient::send] to send commands.
+/// A connection to a Tev instance.
+/// Constructed using [TevClient::wrap], [TevClient::spawn] or [TevClient::spawn_path_default].
+/// Use [TevClient::send] to send commands.
 #[derive(Debug)]
 pub struct TevClient {
     socket: TcpStream,
@@ -99,7 +134,7 @@ impl TevClient {
     }
 }
 
-/// Opens a new image where [image_name] is the path.
+/// Opens a new image where `image_name` is the path.
 #[derive(Debug)]
 pub struct PacketOpenImage<'a> {
     pub image_name: &'a str,
@@ -116,7 +151,7 @@ impl TevPacket for PacketOpenImage<'_> {
     }
 }
 
-/// Reload an existing image with name or path [image_name] from disk.
+/// Reload an existing image with name or path `image_name` from disk.
 #[derive(Debug)]
 pub struct PacketReloadImage<'a> {
     pub image_name: &'a str,
@@ -191,7 +226,7 @@ impl TevPacket for PacketCloseImage<'_> {
     }
 }
 
-/// Create a new image with name [image_name], size ([width], [height]) and channels [channel_names].
+/// Create a new image with name `image_name`, size (`width`, `height`) and channels `channel_names`.
 #[derive(Debug)]
 pub struct PacketCreateImage<'a, S: AsRef<str> + 'a> {
     pub image_name: &'a str,
@@ -213,6 +248,8 @@ impl<'a, S: AsRef<str> + 'a> TevPacket for PacketCreateImage<'a, S> {
     }
 }
 
+/// A buffer used to construct TCP packets. For internal use only.
+#[doc(hidden)]
 pub struct TevWriter {
     target: Vec<u8>
 }
@@ -239,6 +276,8 @@ impl TevWriter {
     }
 }
 
+/// The trait implemented by all packets.
+#[doc(hidden)]
 pub trait TevPacket {
     fn write_to(&self, writer: &mut TevWriter);
 }

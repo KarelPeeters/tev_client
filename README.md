@@ -1,13 +1,14 @@
 # tev_client
 
 This Rust crate implements a IPC TCP client for [tev](https://github.com/Tom94/tev). 
+It enables programmatic control of the images displayed by `tev` using a convenient and safe Rust api.
 
-Supports all existing commands:
-* `OpenImage` open an existing image given the path
-* `ReloadImage` reload an image from disk
-* `CloseImage` close an opened image
-* `CreateImage` create a new black image with given size and channels
-* `UpdateImage` update part of the pixels of an opened image
+Supports all existing `tev` commands:
+* `PacketOpenImage` open an existing image given the path
+* `PacketReloadImage` reload an image from disk
+* `PacketCloseImage` close an opened image
+* `PacketCreateImage` create a new black image with given size and channels
+* `PacketUpdateImage` update part of the pixels of an opened image
 
 ## Example code:
 

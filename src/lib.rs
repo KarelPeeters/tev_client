@@ -1,6 +1,7 @@
 use std::io;
-use std::io::Write;
+pub use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
+use std::process::{Command, Stdio};
 
 /// A connection to a Tev instance. Constructed using [TevClient::new]. Use [TevClient::send] to send commands.
 #[derive(Debug)]
@@ -9,18 +10,64 @@ pub struct TevClient {
 }
 
 impl TevClient {
-    /// Create a [TevClient] from an existing [TcpStream].
-    /// # Example
-    /// If `tev` was started with the default hostname use something like
+    /// Create a [TevClient] from an existing [TcpStream] that's connected to `tev`. If `tev` may not be running yet use
+    /// [TevClient::spawn] or [TevClient::spawn_path_default] instead.
+    ///
+    /// For example, if `tev` is already running on the default hostname:
     /// ```no_run
     /// # use tev_client::TevClient;
     /// # use std::net::TcpStream;
     /// # fn main() -> std::io::Result<()> {
     /// let mut client = TevClient::new(TcpStream::connect("127.0.0.1:14158")?);
+    /// # Ok(())
     /// # }
     /// ```
-    pub fn new(socket: TcpStream) -> Self {
+    pub fn wrap(socket: TcpStream) -> Self {
         TevClient { socket }
+    }
+
+    /// Create a new [TevClient] by spawning `tev` assuming it is in `PATH` with the default hostname.
+    pub fn spawn_path_default() -> std::io::Result<TevClient> {
+        TevClient::spawn(Command::new("tev"))
+    }
+
+    /// Crate a [TevClient] from a command that spawns `tev`.
+    /// If `tev` is in `PATH` and the default host should be used use [TevClient::spawn_path_default] instead.
+    ///
+    /// ```no_run
+    /// # use tev_client::TevClient;
+    /// # use std::process::Command;
+    /// # fn main() -> std::io::Result<()> {
+    /// let mut command = Command::new("path/to/tev");
+    /// command.arg("--hostname=127.0.0.1:14159");
+    /// let mut client = TevClient::spawn(command)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn spawn(mut command: Command) -> io::Result<TevClient> {
+        const PATTERNS: &[&str] = &[
+            "Initialized IPC, listening on ",
+            "Connected to primary instance at ",
+        ];
+
+        let mut child = command.stdout(Stdio::piped()).spawn()?;
+
+        let reader = BufReader::new(child.stdout.take().unwrap());
+
+        for line in reader.lines() {
+            let line = line?;
+
+            for pattern in PATTERNS {
+                if let Some(start) = line.find(pattern) {
+                    let host = &line[start + pattern.len()..];
+
+                    println!("Connecting to host {}", host);
+                    return Ok(TevClient::wrap(TcpStream::connect(host)?));
+                }
+            }
+        }
+
+        panic!("tevs stdout ended without printing any recognized patterns '{:?}'", PATTERNS)
     }
 
     /// Send a command to `tev`. A command is any struct in this crate that implements [TevPacket].

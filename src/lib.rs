@@ -67,7 +67,7 @@ impl TevClient {
     }
 
     /// Crate a [TevClient] from a command that spawns `tev`.
-    /// If `tev` is in `PATH` and the default host should be used use [TevClient::spawn_path_default] instead.
+    /// If `tev` is in `PATH` and the default hostname should be used use [TevClient::spawn_path_default] instead.
     ///
     /// ```no_run
     /// # use tev_client::TevClient;
@@ -86,7 +86,6 @@ impl TevClient {
         ];
 
         let mut child = command.stdout(Stdio::piped()).spawn()?;
-
         let reader = BufReader::new(child.stdout.take().unwrap());
 
         for line in reader.lines() {
@@ -95,8 +94,6 @@ impl TevClient {
             for pattern in PATTERNS {
                 if let Some(start) = line.find(pattern) {
                     let host = &line[start + pattern.len()..];
-
-                    println!("Connecting to host {}", host);
                     return Ok(TevClient::wrap(TcpStream::connect(host)?));
                 }
             }
@@ -129,7 +126,6 @@ impl TevClient {
         let packet_length = vec.len() as u32;
         vec[0..4].copy_from_slice(&packet_length.to_le_bytes());
 
-        println!("Sending {:?}", vec);
         self.socket.write_all(&vec)
     }
 }
@@ -172,8 +168,8 @@ pub struct PacketUpdateImage<'a, S: AsRef<str> + 'a> {
     pub image_name: &'a str,
     pub grab_focus: bool,
     pub channel_names: &'a [S],
-    pub channel_offsets: &'a [u32],
-    pub channel_strides: &'a [u32],
+    pub channel_offsets: &'a [u64],
+    pub channel_strides: &'a [u64],
     pub x: u32,
     pub y: u32,
     pub width: u32,
@@ -189,11 +185,11 @@ impl<'a, S: AsRef<str> + 'a> TevPacket for PacketUpdateImage<'a, S> {
         assert_eq!(channel_count, self.channel_offsets.len(), "Channel count must be consistent");
         assert_eq!(channel_count, self.channel_strides.len(), "Channel count must be consistent");
 
-        let pixel_count = self.width * self.height;
+        let pixel_count = (self.width as u64) * (self.height as u64);
         assert_ne!(pixel_count, 0, "Must update at least one pixel");
 
         let max_data_index_used = self.channel_offsets.iter().zip(self.channel_strides)
-            .map(|(&o, &s)| (o as u64) + (pixel_count as u64 - 1) * (s as u64))
+            .map(|(&o, &s)| o + (pixel_count - 1) * s)
             .max().unwrap();
         assert_eq!(max_data_index_used + 1, self.data.len() as u64, "Data size does not match actually used data range");
 
@@ -206,8 +202,8 @@ impl<'a, S: AsRef<str> + 'a> TevPacket for PacketUpdateImage<'a, S> {
         writer.write(self.y);
         writer.write(self.width);
         writer.write(self.height);
-        writer.write_all(self.channel_offsets.iter().map(|&x| x as u64));
-        writer.write_all(self.channel_strides.iter().map(|&x| x as u64));
+        writer.write_all(self.channel_offsets);
+        writer.write_all(self.channel_strides);
 
         writer.write_all(self.data)
     }

@@ -15,21 +15,24 @@ impl TevClient {
     /// ```no_run
     /// # use tev_client::TevClient;
     /// # use std::net::TcpStream;
-    /// # let client =
-    /// TevClient::new(TcpStream::connect("127.0.0.1:14158")?);
-    /// # Ok::<(), std::io::Error>(())
+    /// # fn main() -> std::io::Result<()> {
+    /// let mut client = TevClient::new(TcpStream::connect("127.0.0.1:14158")?);
+    /// # }
     /// ```
     pub fn new(socket: TcpStream) -> Self {
         TevClient { socket }
     }
 
-    /// Send a command to `tev`.
+    /// Send a command to `tev`. A command is any struct in this crate that implements [TevPacket].
     /// # Example
     /// ```no_run
     /// # use tev_client::{TevClient, PacketOpenImage};
+    /// # fn main() -> std::io::Result<()> {
+    /// # use tev_client::PacketCloseImage;
     /// # let mut client: TevClient = unimplemented!();
-    /// client.send(PacketOpenImage { ..unimplemented!() })?;
-    /// # Ok::<(), std::io::Error>(())
+    /// client.send(PacketCloseImage { image_name: "test.exf" })?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn send(&mut self, packet: impl TevPacket) -> io::Result<()> {
         //reserve space for the packet length
@@ -179,12 +182,12 @@ enum PacketType {
 
 impl TevWriter {
     fn write(&mut self, value: impl TevWritable) {
-        value.write(self);
+        value.write_to(self);
     }
 
     fn write_all(&mut self, values: impl IntoIterator<Item=impl TevWritable>) {
         for value in values {
-            value.write(self);
+            value.write_to(self);
         }
     }
 }
@@ -194,47 +197,47 @@ pub trait TevPacket {
 }
 
 trait TevWritable {
-    fn write(self, writer: &mut TevWriter);
+    fn write_to(self, writer: &mut TevWriter);
 }
 
 impl<T: TevWritable + Copy> TevWritable for &T {
-    fn write(self, writer: &mut TevWriter) {
-        (*self).write(writer);
+    fn write_to(self, writer: &mut TevWriter) {
+        (*self).write_to(writer);
     }
 }
 
 impl TevWritable for bool {
-    fn write(self, writer: &mut TevWriter) {
+    fn write_to(self, writer: &mut TevWriter) {
         writer.target.push(self as u8);
     }
 }
 
 impl TevWritable for PacketType {
-    fn write(self, writer: &mut TevWriter) {
+    fn write_to(self, writer: &mut TevWriter) {
         writer.target.push(self as u8);
     }
 }
 
 impl TevWritable for u32 {
-    fn write(self, writer: &mut TevWriter) {
+    fn write_to(self, writer: &mut TevWriter) {
         writer.target.extend_from_slice(&self.to_le_bytes());
     }
 }
 
 impl TevWritable for u64 {
-    fn write(self, writer: &mut TevWriter) {
+    fn write_to(self, writer: &mut TevWriter) {
         writer.target.extend_from_slice(&self.to_le_bytes());
     }
 }
 
 impl TevWritable for f32 {
-    fn write(self, writer: &mut TevWriter) {
+    fn write_to(self, writer: &mut TevWriter) {
         writer.target.extend_from_slice(&self.to_le_bytes());
     }
 }
 
 impl TevWritable for &'_ str {
-    fn write(self, writer: &mut TevWriter) {
+    fn write_to(self, writer: &mut TevWriter) {
         assert!(!self.contains('\0'), "cannot send strings containing '\\0'");
         writer.target.extend_from_slice(self.as_bytes());
         writer.target.push(0);

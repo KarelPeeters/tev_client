@@ -15,7 +15,7 @@
 //! use tev_client::{PacketCreateImage, TevClient};
 //!
 //! fn main() -> std::io::Result<()> {
-//!     //spawn a tev instance, this command assumes tev is in PATH
+//!     //spawn a tev instance, this command assumes tev is on the PATH
 //!     let mut client = TevClient::spawn_path_default()?;
 //!
 //!     //send a command to tev

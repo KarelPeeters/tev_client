@@ -1,7 +1,7 @@
 //! This Rust crate implements a IPC TCP client for [tev](https://github.com/Tom94/tev).
-//! It enables programmatic control of the images displayed by `tev` using a convenient and safe Rust api.
+//! It enables programmatic control of the images displayed by _tev_ using a convenient and safe Rust api.
 //!
-//! Supports all existing `tev` commands:
+//! Supports all existing _tev_ commands:
 //! * [PacketOpenImage] open an existing image given the path
 //! * [PacketReloadImage] reload an image from disk
 //! * [PacketCloseImage] close an opened image
@@ -11,12 +11,12 @@
 //! ## Example code:
 //!
 //! ```rust
-//! use tev_client::{PacketCreateImage, TevClient};
+//! use tev_client::{TevClient, SpawnError, PacketCreateImage};
 //!
-//! fn main() -> std::io::Result<()> {
+//! fn main() {
 //!     //Spawn a tev instance, this command assumes tev is on the PATH.
 //!     //(there are other constructors available too, see TevClient::spawn and TevClient::wrap.
-//!     let mut client = TevClient::spawn_path_default()?;
+//!     let mut client = TevClient::spawn_path_default().unwrap();
 //!
 //!     //send a command to tev
 //!     client.send(PacketCreateImage {
@@ -25,9 +25,7 @@
 //!         width: 1920,
 //!         height: 1080,
 //!         channel_names: &["R", "G", "B"],
-//!     })?;
-//!
-//!     Ok(())
+//!     }).unwrap();
 //! }
 //! ```
 
@@ -44,16 +42,31 @@ pub struct TevClient {
     socket: TcpStream,
 }
 
+/// The error type returned by [TevClient::spawn] in case of an error.
+#[derive(Debug)]
+pub enum SpawnError {
+    /// Error during command execution.
+    Command { io: std::io::Error },
+    /// Error while reading from stdout of the spawned process.
+    Stdout { io: std::io::Error },
+    /// Tev didn't respond with an address to connect to on stdout.
+    /// `read` is the data that was read before stdout closed.
+    NoSocketResponse { read: String },
+    /// There was an error opening or reading from the TCP connection.
+    /// `host` is the address received from _tev_ we're trying to connect to.
+    Tcp { host: String, io: std::io::Error },
+}
+
 impl TevClient {
-    /// Create a [TevClient] from an existing [TcpStream] that's connected to `tev`. If `tev` may not be running yet use
+    /// Create a [TevClient] from an existing [TcpStream] that's connected to _tev_. If _tev_ may not be running yet use
     /// [TevClient::spawn] or [TevClient::spawn_path_default] instead.
     ///
-    /// For example, if `tev` is already running on the default hostname:
+    /// For example, if _tev_ is already running on the default hostname:
     /// ```no_run
-    /// # use tev_client::TevClient;
+    /// # use tev_client::{TevClient, SpawnError};
     /// # use std::net::TcpStream;
     /// # fn main() -> std::io::Result<()> {
-    /// let mut client = TevClient::new(TcpStream::connect("127.0.0.1:14158")?);
+    /// let mut client = TevClient::wrap(TcpStream::connect("127.0.0.1:14158")?);
     /// # Ok(())
     /// # }
     /// ```
@@ -61,48 +74,55 @@ impl TevClient {
         TevClient { socket }
     }
 
-    /// Create a new [TevClient] by spawning `tev` assuming it is in `PATH` with the default hostname.
-    pub fn spawn_path_default() -> std::io::Result<TevClient> {
+    /// Create a new [TevClient] by spawning _tev_ assuming it is in `PATH` with the default hostname.
+    pub fn spawn_path_default() -> Result<TevClient, SpawnError> {
         TevClient::spawn(Command::new("tev"))
     }
 
-    /// Crate a [TevClient] from a command that spawns `tev`.
-    /// If `tev` is in `PATH` and the default hostname should be used use [TevClient::spawn_path_default] instead.
+    /// Crate a [TevClient] from a command that spawns _tev_.
+    /// If _tev_ is in `PATH` and the default hostname should be used use [TevClient::spawn_path_default] instead.
     ///
     /// ```no_run
-    /// # use tev_client::TevClient;
+    /// # use tev_client::{TevClient, SpawnError};
     /// # use std::process::Command;
-    /// # fn main() -> std::io::Result<()> {
+    /// # fn main() -> Result<(), SpawnError> {
     /// let mut command = Command::new("path/to/tev");
     /// command.arg("--hostname=127.0.0.1:14159");
     /// let mut client = TevClient::spawn(command)?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn spawn(mut command: Command) -> io::Result<TevClient> {
+    pub fn spawn(mut command: Command) -> Result<TevClient, SpawnError> {
         const PATTERNS: &[&str] = &[
             "Initialized IPC, listening on ",
             "Connected to primary instance at ",
         ];
 
-        let mut child = command.stdout(Stdio::piped()).spawn()?;
+        let mut child = command.stdout(Stdio::piped()).spawn()
+            .map_err(|io| SpawnError::Command { io })?;
         let reader = BufReader::new(child.stdout.take().unwrap());
 
+        let mut read = String::new();
         for line in reader.lines() {
-            let line = line?;
+            let line = line.map_err(|io| SpawnError::Stdout { io })?;
 
             for pattern in PATTERNS {
                 if let Some(start) = line.find(pattern) {
                     let host = &line[start + pattern.len()..];
-                    return Ok(TevClient::wrap(TcpStream::connect(host)?));
+                    let socket = TcpStream::connect(host)
+                        .map_err(|io| SpawnError::Tcp { host: host.to_string(), io })?;
+                    return Ok(TevClient::wrap(socket));
                 }
             }
+
+            read.push_str(&line);
+            read.push('\n');
         }
 
-        panic!("tevs stdout ended without printing any recognized patterns '{:?}'", PATTERNS)
+        return Err(SpawnError::NoSocketResponse { read })
     }
 
-    /// Send a command to `tev`. A command is any struct in this crate that implements [TevPacket].
+    /// Send a command to _tev_. A command is any struct in this crate that implements [TevPacket].
     /// # Example
     /// ```no_run
     /// # use tev_client::{TevClient, PacketOpenImage};
@@ -247,7 +267,7 @@ impl<'a, S: AsRef<str> + 'a> TevPacket for PacketCreateImage<'a, S> {
 /// A buffer used to construct TCP packets. For internal use only.
 #[doc(hidden)]
 pub struct TevWriter {
-    target: Vec<u8>
+    target: Vec<u8>,
 }
 
 #[repr(C)]

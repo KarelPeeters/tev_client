@@ -11,11 +11,11 @@
 //! ## Example code:
 //!
 //! ```rust
-//! use std::process::Command;
 //! use tev_client::{PacketCreateImage, TevClient};
 //!
 //! fn main() -> std::io::Result<()> {
-//!     //spawn a tev instance, this command assumes tev is on the PATH
+//!     //Spawn a tev instance, this command assumes tev is on the PATH.
+//!     //(there are other constructors available too, see TevClient::spawn and TevClient::wrap.
 //!     let mut client = TevClient::spawn_path_default()?;
 //!
 //!     //send a command to tev

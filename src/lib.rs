@@ -11,21 +11,23 @@
 //! ## Example code:
 //!
 //! ```rust
-//! use tev_client::{TevClient, SpawnError, PacketCreateImage};
+//! use tev_client::{TevClient, TevError, PacketCreateImage};
 //!
-//! fn main() {
-//!     //Spawn a tev instance, this command assumes tev is on the PATH.
-//!     //(there are other constructors available too, see TevClient::spawn and TevClient::wrap.
-//!     let mut client = TevClient::spawn_path_default().unwrap();
+//! fn main() -> Result<(), TevError> {
+//!     // Spawn a tev instance, this command assumes tev is on the PATH.
+//!     // There are other constructors available too, see TevClient::spawn and TevClient::wrap.
+//!     let mut client = TevClient::spawn_path_default()?;
 //!
-//!     //send a command to tev
+//!     // Create a new image
 //!     client.send(PacketCreateImage {
 //!         image_name: "test",
 //!         grab_focus: false,
 //!         width: 1920,
 //!         height: 1080,
 //!         channel_names: &["R", "G", "B"],
-//!     }).unwrap();
+//!     })?;
+//!
+//!     Ok(())
 //! }
 //! ```
 
@@ -43,8 +45,11 @@ pub struct TevClient {
 }
 
 /// The error type returned by [TevClient::spawn] in case of an error.
+///
+/// For convenience, this type implements `From<std::io::Error>` so the errors returned by [TevClient::send]
+/// can be wrapped into this type by the `?` operator.
 #[derive(Debug)]
-pub enum SpawnError {
+pub enum TevError {
     /// Error during command execution.
     Command { io: std::io::Error },
     /// Error while reading from stdout of the spawned process.
@@ -52,9 +57,11 @@ pub enum SpawnError {
     /// Tev didn't respond with an address to connect to on stdout.
     /// `read` is the data that was read before stdout closed.
     NoSocketResponse { read: String },
-    /// There was an error opening or reading from the TCP connection.
+    /// There was an error opening or writing to the TCP connection.
     /// `host` is the address received from _tev_ we're trying to connect to.
-    Tcp { host: String, io: std::io::Error },
+    TcpConnect { host: String, io: std::io::Error },
+    /// There was some other IO error.
+    IO { io: std::io::Error },
 }
 
 impl TevClient {
@@ -63,7 +70,7 @@ impl TevClient {
     ///
     /// For example, if _tev_ is already running on the default hostname:
     /// ```no_run
-    /// # use tev_client::{TevClient, SpawnError};
+    /// # use tev_client::{TevClient, TevError};
     /// # use std::net::TcpStream;
     /// # fn main() -> std::io::Result<()> {
     /// let mut client = TevClient::wrap(TcpStream::connect("127.0.0.1:14158")?);
@@ -75,7 +82,7 @@ impl TevClient {
     }
 
     /// Create a new [TevClient] by spawning _tev_ assuming it is in `PATH` with the default hostname.
-    pub fn spawn_path_default() -> Result<TevClient, SpawnError> {
+    pub fn spawn_path_default() -> Result<TevClient, TevError> {
         TevClient::spawn(Command::new("tev"))
     }
 
@@ -83,34 +90,34 @@ impl TevClient {
     /// If _tev_ is in `PATH` and the default hostname should be used use [TevClient::spawn_path_default] instead.
     ///
     /// ```no_run
-    /// # use tev_client::{TevClient, SpawnError};
+    /// # use tev_client::{TevClient, TevError};
     /// # use std::process::Command;
-    /// # fn main() -> Result<(), SpawnError> {
+    /// # fn main() -> Result<(), TevError> {
     /// let mut command = Command::new("path/to/tev");
     /// command.arg("--hostname=127.0.0.1:14159");
     /// let mut client = TevClient::spawn(command)?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn spawn(mut command: Command) -> Result<TevClient, SpawnError> {
+    pub fn spawn(mut command: Command) -> Result<TevClient, TevError> {
         const PATTERNS: &[&str] = &[
             "Initialized IPC, listening on ",
             "Connected to primary instance at ",
         ];
 
         let mut child = command.stdout(Stdio::piped()).spawn()
-            .map_err(|io| SpawnError::Command { io })?;
+            .map_err(|io| TevError::Command { io })?;
         let reader = BufReader::new(child.stdout.take().unwrap());
 
         let mut read = String::new();
         for line in reader.lines() {
-            let line = line.map_err(|io| SpawnError::Stdout { io })?;
+            let line = line.map_err(|io| TevError::Stdout { io })?;
 
             for pattern in PATTERNS {
                 if let Some(start) = line.find(pattern) {
                     let host = &line[start + pattern.len()..];
                     let socket = TcpStream::connect(host)
-                        .map_err(|io| SpawnError::Tcp { host: host.to_string(), io })?;
+                        .map_err(|io| TevError::TcpConnect { host: host.to_string(), io })?;
                     return Ok(TevClient::wrap(socket));
                 }
             }
@@ -119,7 +126,7 @@ impl TevClient {
             read.push('\n');
         }
 
-        return Err(SpawnError::NoSocketResponse { read })
+        return Err(TevError::NoSocketResponse { read });
     }
 
     /// Send a command to _tev_. A command is any struct in this crate that implements [TevPacket].
@@ -343,5 +350,11 @@ impl TevWritable for &'_ str {
         assert!(!self.contains('\0'), "cannot send strings containing '\\0'");
         writer.target.extend_from_slice(self.as_bytes());
         writer.target.push(0);
+    }
+}
+
+impl From<std::io::Error> for TevError {
+    fn from(io: std::io::Error) -> Self {
+        TevError::IO { io }
     }
 }

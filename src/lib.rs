@@ -115,7 +115,12 @@ impl TevClient {
 
             for pattern in PATTERNS {
                 if let Some(start) = line.find(pattern) {
-                    let host = &line[start + pattern.len()..];
+                    let rest = &line[start + pattern.len()..];
+
+                    // cut of any trailing terminal escape codes
+                    let end = rest.find('\u{1b}').unwrap_or(rest.len());
+                    let host = &rest[..end];
+
                     let socket = TcpStream::connect(host)
                         .map_err(|io| TevError::TcpConnect { host: host.to_string(), io })?;
                     return Ok(TevClient::wrap(socket));

@@ -2,11 +2,11 @@
 //! It enables programmatic control of the images displayed by _tev_ using a convenient and safe Rust api.
 //!
 //! Supports all existing _tev_ commands:
-//! * [PacketOpenImage] open an existing image given the path
-//! * [PacketReloadImage] reload an image from disk
-//! * [PacketCloseImage] close an opened image
-//! * [PacketCreateImage] create a new black image with given size and channels
-//! * [PacketUpdateImage] update part of the pixels of an opened image
+//! * [PacketOpenImage](crate::PacketOpenImage) open an existing image given the path
+//! * [PacketReloadImage](crate::PacketReloadImage) reload an image from disk
+//! * [PacketCloseImage](crate::PacketCloseImage) close an opened image
+//! * [PacketCreateImage](crate::PacketCreateImage) create a new black image with given size and channels
+//! * [PacketUpdateImage](crate::PacketUpdateImage) update part of the pixels of an opened image
 //!
 //! ## Example code:
 //!

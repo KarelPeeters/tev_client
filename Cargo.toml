@@ -1,6 +1,6 @@
 [package]
 name = "tev_client"
-version = "0.5.1"
+version = "0.5.2"
 authors = ["Karel <karel.peeters.leuven@gmail.com>"]
 edition = "2018"
 

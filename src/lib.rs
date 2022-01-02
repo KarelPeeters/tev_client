@@ -31,6 +31,8 @@
 //! }
 //! ```
 
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::io;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
@@ -60,7 +62,7 @@ pub enum TevError {
     /// There was an error opening or writing to the TCP connection.
     /// `host` is the address received from _tev_ we're trying to connect to.
     TcpConnect { host: String, io: std::io::Error },
-    /// There was some other IO error.
+    /// There was some other IO error. This variant exits to make the `?` more convenient to use.
     IO { io: std::io::Error },
 }
 
@@ -131,7 +133,7 @@ impl TevClient {
             read.push('\n');
         }
 
-        return Err(TevError::NoSocketResponse { read });
+        Err(TevError::NoSocketResponse { read })
     }
 
     /// Send a command to _tev_. A command is any struct in this crate that implements [TevPacket].
@@ -361,5 +363,34 @@ impl TevWritable for &'_ str {
 impl From<std::io::Error> for TevError {
     fn from(io: std::io::Error) -> Self {
         TevError::IO { io }
+    }
+}
+
+impl Display for TevError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TevError::Command { io } =>
+                write!(f, "error during command execution: {}", io),
+            TevError::Stdout { io } =>
+                write!(f, "error during stdout reading: {}", io),
+            TevError::NoSocketResponse { read } =>
+                write!(f, "stdout did not contain socket, got '{}'", read),
+            TevError::TcpConnect { host, io } =>
+                write!(f, "error during attempted tcp connection to '{}': {}", host, io),
+            TevError::IO { io } =>
+                write!(f, "generic IO error: {}", io),
+        }
+    }
+}
+
+impl std::error::Error for TevError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            TevError::Command { io } | TevError::Stdout { io } |
+            TevError::TcpConnect { host: _, io } | TevError::IO { io } =>
+                Some(io),
+            TevError::NoSocketResponse { read: _ } =>
+                None,
+        }
     }
 }
